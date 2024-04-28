@@ -1,0 +1,77 @@
+
+local Api = {}
+local httpget; do
+    local game = game
+    local oldhttpget = game.HttpGet
+    httpget = function(url)
+        local success, result = pcall(oldhttpget, game, url)
+        if not success then
+            error("Failed to send get request: " .. tostring(result))
+        end
+        return result
+    end
+end
+
+-- Pattern to extract items and their values from the webpage
+local itemPattern = 'data%-name="([^"]+)"[^>]*>[%s]*
+([%d,]+)'
+
+-- Base URL and game-specific handling
+local GameId = game.GameId
+local supportedGames = {
+[66654135] = { -- Murder Mystery 2
+name = "MurderMystery2",
+baseUrl = "https://supremevaluelist.com/mm2/",
+itemTypes = {"ancient", "unique", "godly", "vintage", "legend", "rare", "uncommon", "common", "pets", "misc"}
+}
+-- Add more games and their URLs here
+}
+
+local currentGame = supportedGames[GameId]
+if not currentGame then
+error("[UniversalValueApi] Unsupported game. Current GameId: " .. tostring(GameId))
+end
+
+Api.Game = currentGame.name
+
+function Api.refresh(self)
+assert(self == Api, "Use colon notation. Try self:refresh()")
+local values = {}
+for _, itemType in ipairs(currentGame.itemTypes) do
+local url = currentGame.baseUrl .. itemType
+local body = httpget(url)
+body:gsub(itemPattern, function(name, value)
+name = string.upper(name)
+value = tonumber((value:gsub("%D", ""))) -- Remove non-digit characters and convert to number
+values[name] = value
+end)
+end
+self.Values = values
+return values
+end
+
+function Api.calculate(self, items)
+assert(self == Api, "Use colon notation. Try self:calculate(items)")
+assert(type(items) == "table", "Expected 'table' for items, got " .. type(items))
+local totalValue = 0
+for item, amount in pairs(items) do
+local itemValue = self.Values[string.upper(item)]
+if itemValue then
+totalValue += itemValue * math.max(0, amount) -- Ensure non-negative amounts
+else
+warn("Item '" .. item .. "' was not found in values.")
+end
+end
+return totalValue
+end
+
+function Api.format(self, number)
+assert(self == Api, "Use colon notation. Try self:format(number)")
+assert(type(number) == "number", "Expected 'number' for number, got " .. type(number))
+return tostring(number):reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", "")
+end
+
+-- Refresh values on load
+Api:refresh()
+shared.UniversalValueApi = Api
+return Api
